@@ -41,4 +41,10 @@ jobs:
 
       - name: show-framework
         run: |
-            ls -lh ios_build
+          ls -lh ios_build
+
+      - name: Upload iOS Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-framework
+          path: ios_build/
