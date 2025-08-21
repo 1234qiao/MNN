@@ -1,0 +1,29 @@
+# .github/workflows/build_framework_once.yml
+# 目的：只编译一次 MNN.framework 并将其作为产物上传
+
+name: Build MNN Framework for iOS
+
+on:
+  workflow_dispatch: # 只允许手动触发
+
+jobs:
+  build-framework:
+    name: Build MNN.framework
+    runs-on: macos-14 # 使用稳定的环境
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+
+      - name: Build MNN.framework with LLM support
+        run: |
+          sh package_scripts/ios/buildiOS.sh "-DMNN_ARM82=true -DMNN_LOW_MEMORY=true -DMNN_SUPPORT_TRANSFORMER_FUSE=true -DMNN_BUILD_LLM=true -DMNN_CPU_WEIGHT_DEQUANT_GEMM=true -DMNN_METAL=ON -DMNN_BUILD_DIFFUSION=ON -DMNN_BUILD_OPENCV=ON -DMNN_IMGCODECS=ON -DMNN_OPENCL=OFF -DMNN_SEP_BUILD=OFF -DMNN_SUPPORT_TRANSFORMER_FUSE=ON"
+
+      - name: Upload MNN.framework Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MNN-framework-iOS
+          path: MNN-iOS-CPU-GPU/Static/MNN.framework
+          retention-days: 90 # 长期保存
