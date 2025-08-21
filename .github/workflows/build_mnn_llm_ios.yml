@@ -1,4 +1,4 @@
-# .github/workflows/build_mnn_llm_ios.yml (v17 - The Final Polish)
+# .github/workflows/build_mnn_llm_ios.yml (v15 - The Final Solution: xcodegen)
 
 name: Build MNN LLM iOS App
 
@@ -15,6 +15,7 @@ concurrency:
 jobs:
   build-ipa-from-scratch:
     name: Build IPA with xcodegen
+    # 关键 1: 锁定在稳定、可靠的 macos-14 (Xcode 15) 环境
     runs-on: macos-14
 
     steps:
@@ -27,21 +28,25 @@ jobs:
       # 步骤 2: 编译 MNN.framework
       - name: Build and Place MNN.framework
         run: |
+          echo "### Building MNN.framework with LLM support..."
           sh package_scripts/ios/buildiOS.sh "-DMNN_ARM82=true -DMNN_LOW_MEMORY=true -DMNN_SUPPORT_TRANSFORMER_FUSE=true -DMNN_BUILD_LLM=true -DMNN_CPU_WEIGHT_DEQUANT_GEMM=true -DMNN_METAL=ON -DMNN_BUILD_DIFFUSION=ON -DMNN_BUILD_OPENCV=ON -DMNN_IMGCODECS=ON -DMNN_OPENCL=OFF -DMNN_SEP_BUILD=OFF -DMNN_SUPPORT_TRANSFORMER_FUSE=ON"
+          
+          echo "### Moving framework into App project..."
           mv MNN-iOS-CPU-GPU/Static/MNN.framework apps/iOS/MNNLLMChat/
 
-      # 步骤 3: 使用 xcodegen 重新生成项目文件 (增强版)
-      - name: Generate compatible Xcode project
+      # 步骤 3: [终极修复] 使用 xcodegen 重新生成项目文件
+      - name: Regenerate Xcode Project
         run: |
           echo "### Installing xcodegen..."
           brew install xcodegen
           
           APP_DIR="apps/iOS/MNNLLMChat"
 
-          echo "### Removing old, incompatible .xcodeproj..."
+          # [关键一步] 彻底删除旧的、不兼容的 .xcodeproj 文件
+          echo "### Removing old, incompatible .xcodeproj to ensure a clean generation..."
           rm -rf "${APP_DIR}/MNNLLMiOS.xcodeproj"
           
-          # [关键修复] 创建一个更详细的 project.yml 配置文件
+          # 创建 xcodegen 的配置文件，这是 xcodegen 的蓝图
           cat > "${APP_DIR}/project.yml" <<EOL
           name: MNNLLMiOS
           options:
@@ -57,20 +62,12 @@ jobs:
               settings:
                 base:
                   SWIFT_VERSION: "5.0"
-                  DEVELOPMENT_TEAM: "YOUR_TEAM_ID" # 占位符
-                  # 明确告诉链接器去哪里找框架
-                  FRAMEWORK_SEARCH_PATHS: "$(inherited) $(PROJECT_DIR)"
+                  DEVELOPMENT_TEAM: "YOUR_TEAM_ID"
               dependencies:
                 - framework: MNN.framework
                 - package: SQLite.swift
                 - package: ExyteChat
                 - package: Transformers
-                # [关键修复] 添加 SwiftUI App 所需的系统框架
-                - sdk: UIKit.framework
-                - sdk: SwiftUI.framework
-                - sdk: Foundation.framework
-                - sdk: AVFoundation.framework
-                - sdk: CoreAudioTypes.framework
           packages:
             SQLite.swift:
               url: https://github.com/stephencelis/SQLite.swift
@@ -91,6 +88,7 @@ jobs:
       - name: Build and Export unsigned IPA
         run: |
           cd apps/iOS/MNNLLMChat
+          echo "### Archiving the newly generated project..."
           xcodebuild archive \
             -project MNNLLMiOS.xcodeproj \
             -scheme MNNLLMiOS \
@@ -99,6 +97,7 @@ jobs:
             -configuration Release \
             CODE_SIGNING_ALLOWED=NO
 
+          echo "### Exporting the archive to an IPA..."
           xcodebuild -exportArchive \
             -archivePath build/MNNLLMChat.xcarchive \
             -exportPath build/ipa \
