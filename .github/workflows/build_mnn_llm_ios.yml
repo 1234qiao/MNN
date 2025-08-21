@@ -1,4 +1,4 @@
-# .github/workflows/build_mnn_llm_ios.yml (v10 - Pinning to Stable Environment)
+# .github/workflows/build_mnn_llm_ios.yml (v12 - Correct and Final)
 
 name: Build MNN LLM iOS App
 
@@ -15,17 +15,14 @@ concurrency:
 jobs:
   build-ios-app:
     name: Build MNNLLMChat IPA on macOS 14
-    # [关键修复] 明确指定一个稳定的虚拟机环境，避免使用可能存在问题的 `macos-latest`
     runs-on: macos-14
 
     steps:
-      # 步骤 1: 检出代码
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           submodules: 'recursive'
 
-      # 步骤 2: 编译 MNN.framework
       - name: Build and Place MNN.framework
         run: |
           echo "### Building MNN.framework with LLM support..."
@@ -34,21 +31,17 @@ jobs:
           echo "### Moving framework into App project..."
           mv MNN-iOS-CPU-GPU/Static/MNN.framework apps/iOS/MNNLLMChat/
 
-      # 步骤 3: 构建并导出 IPA (使用命令行强制覆盖部署版本)
       - name: Build and Export unsigned IPA
         run: |
           cd apps/iOS/MNNLLMChat
-
-          echo "### Archiving the application with Deployment Target Override..."
-          # 在 Xcode 15 (macos-14) 环境下，这个命令将强制项目使用 iOS 17 SDK 来构建一个兼容 iOS 16 的 App
+          echo "### Archiving the application..."
           xcodebuild archive \
             -project MNNLLMiOS.xcodeproj \
             -scheme MNNLLMiOS \
             -destination "generic/platform=iOS" \
             -archivePath build/MNNLLMChat.xcarchive \
             -configuration Release \
-            CODE_SIGNING_ALLOWED=NO \
-            IPHONEOS_DEPLOYMENT_TARGET=16.0
+            CODE_SIGNING_ALLOWED=NO
 
           echo "### Exporting the archive to an IPA..."
           xcodebuild -exportArchive \
@@ -61,19 +54,11 @@ jobs:
             <dict>
                 <key>method</key>
                 <string>development</string>
-                <key>signingStyle</key>
-                <string>manual</string>
-                <key>provisioningProfiles</key>
-                <dict/>
             </dict>
             </plist>
             EOF
             )
 
-          echo "### IPA exported successfully:"
-          ls -lh build/ipa/
-
-      # 步骤 4: 上传 IPA 文件作为产物
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
         with:
