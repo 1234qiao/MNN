@@ -1,4 +1,4 @@
-# .github/workflows/build_mnn_llm_ios.yml (v15 - The Final Solution: rm + xcodegen)
+# .github/workflows/build_mnn_llm_ios.yml (v17 - Forensic Debugging)
 
 name: Build MNN LLM iOS App
 
@@ -14,39 +14,41 @@ concurrency:
 
 jobs:
   build-ipa-from-scratch:
-    name: Build IPA with xcodegen
-    # 关键 1: 锁定在稳定、可靠的 macos-14 (Xcode 15) 环境
+    name: Build IPA with xcodegen (Forensic Mode)
     runs-on: macos-14
 
     steps:
-      # 步骤 1: 检出代码
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           submodules: 'recursive'
 
-      # 步骤 2: 编译 MNN.framework
       - name: Build and Place MNN.framework
         run: |
-          echo "### Building MNN.framework with LLM support..."
           sh package_scripts/ios/buildiOS.sh "-DMNN_ARM82=true -DMNN_LOW_MEMORY=true -DMNN_SUPPORT_TRANSFORMER_FUSE=true -DMNN_BUILD_LLM=true -DMNN_CPU_WEIGHT_DEQUANT_GEMM=true -DMNN_METAL=ON -DMNN_BUILD_DIFFUSION=ON -DMNN_BUILD_OPENCV=ON -DMNN_IMGCODECS=ON -DMNN_OPENCL=OFF -DMNN_SEP_BUILD=OFF -DMNN_SUPPORT_TRANSFORMER_FUSE=ON"
-          
-          echo "### Moving framework into App project..."
           mv MNN-iOS-CPU-GPU/Static/MNN.framework apps/iOS/MNNLLMChat/
 
-      # 步骤 3: [终极修复] 使用 xcodegen 重新生成项目文件
-      - name: Regenerate Xcode Project
+      # 步骤 3: [终极调试] 详细记录 xcodegen 的每一步
+      - name: Regenerate Xcode Project with Detailed Logging
         run: |
-          echo "### Installing xcodegen..."
+          echo "### 1. Starting project regeneration step. Current directory:"
+          pwd
+          
+          echo "### 2. Installing xcodegen..."
           brew install xcodegen
           
           APP_DIR="apps/iOS/MNNLLMChat"
 
-          # [关键一步] 彻底删除旧的、不兼容的 .xcodeproj 文件
-          echo "### Removing old, incompatible .xcodeproj to ensure a clean generation..."
+          echo "### 3. Listing contents of '${APP_DIR}' BEFORE deletion:"
+          ls -laR "${APP_DIR}"
+          
+          echo "### 4. Deleting old project directory: ${APP_DIR}/MNNLLMiOS.xcodeproj"
           rm -rf "${APP_DIR}/MNNLLMiOS.xcodeproj"
           
-          # 创建 xcodegen 的配置文件，这是 xcodegen 的蓝图
+          echo "### 5. Listing contents of '${APP_DIR}' AFTER deletion:"
+          ls -laR "${APP_DIR}"
+          
+          echo "### 6. Creating project.yml file..."
           cat > "${APP_DIR}/project.yml" <<EOL
           name: MNNLLMiOS
           options:
@@ -79,12 +81,18 @@ jobs:
               url: https://github.com/huggingface/swift-transformers/
               from: 0.1.22
           EOL
-
-          echo "### Generating new Xcode project..."
+          
+          echo "### 7. Verifying project.yml creation:"
+          ls -l "${APP_DIR}/project.yml"
+          
+          echo "### 8. Generating new Xcode project from yml..."
           cd "${APP_DIR}"
           xcodegen generate
+          
+          echo "### 9. Generation finished. Listing FINAL contents of current directory:"
+          ls -laR .
 
-      # 步骤 4: 构建并导出 IPA
+      # 后续步骤暂时保持不变
       - name: Build and Export unsigned IPA
         run: |
           cd apps/iOS/MNNLLMChat
@@ -97,13 +105,6 @@ jobs:
             -configuration Release \
             CODE_SIGNING_ALLOWED=NO
 
-          echo "### Exporting the archive to an IPA..."
-          xcodebuild -exportArchive \
-            -archivePath build/MNNLLMChat.xcarchive \
-            -exportPath build/ipa \
-            -exportOptionsPlist <(echo '<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>method</key><string>development</string></dict></plist>')
-
-      # 步骤 5: 上传最终产物
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
         with:
