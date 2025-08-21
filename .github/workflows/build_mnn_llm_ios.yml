@@ -1,4 +1,4 @@
-# .github/workflows/build_mnn_llm_ios.yml (v15 - The Final Solution: xcodegen)
+# .github/workflows/build_mnn_llm_ios.yml (v15 - The Final Solution: rm + xcodegen)
 
 name: Build MNN LLM iOS App
 
