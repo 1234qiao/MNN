@@ -1,4 +1,4 @@
-# .github/workflows/build_mnn_llm_ios.yml (v16 - The Definitive Fix)
+# .github/workflows/build_mnn_llm_ios.yml (v17 - The Final Polish)
 
 name: Build MNN LLM iOS App
 
@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   build-ipa-from-scratch:
-    name: Build MNNLLMChat IPA on macOS 14
+    name: Build IPA with xcodegen
     runs-on: macos-14
 
     steps:
@@ -30,64 +30,64 @@ jobs:
           sh package_scripts/ios/buildiOS.sh "-DMNN_ARM82=true -DMNN_LOW_MEMORY=true -DMNN_SUPPORT_TRANSFORMER_FUSE=true -DMNN_BUILD_LLM=true -DMNN_CPU_WEIGHT_DEQUANT_GEMM=true -DMNN_METAL=ON -DMNN_BUILD_DIFFUSION=ON -DMNN_BUILD_OPENCV=ON -DMNN_IMGCODECS=ON -DMNN_OPENCL=OFF -DMNN_SEP_BUILD=OFF -DMNN_SUPPORT_TRANSFORMER_FUSE=ON"
           mv MNN-iOS-CPU-GPU/Static/MNN.framework apps/iOS/MNNLLMChat/
 
-      # 步骤 3: [终极修复] 使用 Python 脚本对 Xcode 项目文件进行降级
-      - name: Downgrade Xcode Project File for Compatibility
+      # 步骤 3: 使用 xcodegen 重新生成项目文件 (增强版)
+      - name: Generate compatible Xcode project
         run: |
-          PROJECT_FILE="apps/iOS/MNNLLMChat/MNNLLMiOS.xcodeproj/project.pbxproj"
-          echo "### Downgrading Xcode project file for Xcode 15 compatibility..."
+          echo "### Installing xcodegen..."
+          brew install xcodegen
           
-          python3 -c "
-          import sys
-          import re
+          APP_DIR="apps/iOS/MNNLLMChat"
 
-          path = '${PROJECT_FILE}'
-          with open(path, 'r') as f:
-              lines = f.readlines()
-
-          new_lines = []
-          skip_block = False
+          echo "### Removing old, incompatible .xcodeproj..."
+          rm -rf "${APP_DIR}/MNNLLMiOS.xcodeproj"
           
-          # 定义所有需要降级的版本号
-          version_map = {
-              'objectVersion = 77;': 'objectVersion = 56;',
-              'LastUpgradeCheck = 1620;': 'LastUpgradeCheck = 1540;',
-              'LastSwiftUpdateCheck = 1620;': 'LastSwiftUpdateCheck = 1540;',
-              'CreatedOnToolsVersion = 16.2;': 'CreatedOnToolsVersion = 15.4;',
-          }
+          # [关键修复] 创建一个更详细的 project.yml 配置文件
+          cat > "${APP_DIR}/project.yml" <<EOL
+          name: MNNLLMiOS
+          options:
+            bundleIdPrefix: com.yourcompany
+          targets:
+            MNNLLMiOS:
+              type: application
+              platform: iOS
+              deploymentTarget: "16.0"
+              sources: [MNNLLMiOS/]
+              info:
+                path: MNNLLMiOS/Info.plist
+              settings:
+                base:
+                  SWIFT_VERSION: "5.0"
+                  DEVELOPMENT_TEAM: "YOUR_TEAM_ID" # 占位符
+                  # 明确告诉链接器去哪里找框架
+                  FRAMEWORK_SEARCH_PATHS: "$(inherited) $(PROJECT_DIR)"
+              dependencies:
+                - framework: MNN.framework
+                - package: SQLite.swift
+                - package: ExyteChat
+                - package: Transformers
+                # [关键修复] 添加 SwiftUI App 所需的系统框架
+                - sdk: UIKit.framework
+                - sdk: SwiftUI.framework
+                - sdk: Foundation.framework
+                - sdk: AVFoundation.framework
+                - sdk: CoreAudioTypes.framework
+          packages:
+            SQLite.swift:
+              url: https://github.com/stephencelis/SQLite.swift
+              from: 0.15.3
+            ExyteChat:
+              url: https://github.com/Yogayu/Chat.git
+              branch: main
+            Transformers:
+              url: https://github.com/huggingface/swift-transformers/
+              from: 0.1.22
+          EOL
 
-          for line in lines:
-              # 如果在一个要跳过的块里，就继续跳过直到块结束
-              if skip_block:
-                  if ');' in line:
-                      skip_block = False
-                  continue
+          echo "### Generating new Xcode project..."
+          cd "${APP_DIR}"
+          xcodegen generate
 
-              # 检查是否是我们要删除的块的开始
-              if 'exceptions = (' in line.strip() or 'fileSystemSynchronizedGroups = (' in line.strip():
-                  if ');' not in line: # 如果不是单行块
-                      skip_block = True
-                  continue
-
-              # 替换版本号
-              for old, new in version_map.items():
-                  if old in line:
-                      line = line.replace(old, new)
-                      break
-              
-              # 替换 isa 类型
-              line = line.replace('isa = PBXFileSystemSynchronizedRootGroup;', 'isa = PBXGroup;')
-              # 替换部署目标版本
-              line = re.sub(r'(IPHONEOS_DEPLOYMENT_TARGET = )1[7-9][.0-9]*;', r'\g<1>16.0;', line)
-
-              new_lines.append(line)
-
-          with open(path, 'w') as f:
-              f.writelines(new_lines)
-
-          print('### Project file successfully downgraded.')
-          "
-      
-      # 步骤 4: 构建并导出 IPA (现在使用降级后的项目文件)
+      # 步骤 4: 构建并导出 IPA
       - name: Build and Export unsigned IPA
         run: |
           cd apps/iOS/MNNLLMChat
