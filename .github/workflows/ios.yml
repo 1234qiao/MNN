@@ -1,51 +1,118 @@
-name: ios
+# .github/workflows/build_mnn_llm_ios.yml
+
+name: Build MNN LLM iOS App
+
 on:
+  # 允许您在 Actions 页面手动点击 "Run workflow" 来触发
+  workflow_dispatch:
+  # 也可以在代码推送到 master 分支时自动触发
   push:
     branches:
-     - master
-     - 'feature/**'
+      - master
     paths:
+      - 'apps/iOS/MNNLLMChat/**'
+      - 'package_scripts/ios/**'
       - 'source/**'
-      - 'express/**'
-      - 'test/**'
-      - 'project/ios/**'
-      - '.github/workflows/ios.yml'
-  pull_request:
-    branches: [master]
-    paths:
-      - 'source/**'
-      - 'express/**'
-      - 'test/**'
-      - 'project/ios/**'
-      - '.github/workflows/ios.yml'
-  workflow_dispatch:
+      - '.github/workflows/build_mnn_llm_ios.yml'
 
+# 设置任务的并发性，确保同一分支的旧任务会被新任务自动取消
 concurrency:
-  group: ios-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
-permissions:
-  contents: read
 
 jobs:
-  ios_build:
+  build-ios-app:
+    name: Build MNNLLMChat IPA
+    # 使用 GitHub 提供的最新版 macOS 虚拟机
     runs-on: macos-latest
+
     steps:
-      - uses: actions/checkout@v3
+      # --- 第 1 步: 检出代码 ---
+      # 下载您仓库的源代码到虚拟机中
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        # MNN 仓库可能包含子模块，需要递归检出
         with:
-          submodules: true
+          submodules: 'recursive'
 
-      - name: build-framework
+      # --- 第 2 步: 编译 MNN.framework (启用LLM) ---
+      # 这是最关键的一步，我们严格按照 MNNLLMChat README 的指引来操作
+      - name: Build MNN.framework with LLM support
         run: |
-          brew install coreutils
-          ./package_scripts/ios/xcodebuildiOS.sh -o ios_build
-        shell: bash
-
-      - name: show-framework
+          echo "Starting MNN.framework build..."
+          # 注意：这里的长字符串参数必须用引号括起来，以确保被正确传递给脚本
+          sh package_scripts/ios/buildiOS.sh "-DMNN_ARM82=true -DMNN_LOW_MEMORY=true -DMNN_SUPPORT_TRANSFORMER_FUSE=true -DMNN_BUILD_LLM=true -DMNN_CPU_WEIGHT_DEQUANT_GEMM=true -DMNN_METAL=ON -DMNN_BUILD_DIFFUSION=ON -DMNN_BUILD_OPENCV=ON -DMNN_IMGCODECS=ON -DMNN_OPENCL=OFF -DMNN_SEP_BUILD=OFF -DMNN_SUPPORT_TRANSFORMER_FUSE=ON"
+          echo "MNN.framework build completed."
+      
+      # --- 第 3 步: 移动 MNN.framework 到 App 项目目录 ---
+      # 将刚刚编译好的产物，移动到它该去的地方
+      - name: Move MNN.framework to App project
         run: |
-          ls -lh ios_build
+          echo "Moving framework..."
+          # 确保目标目录存在
+          mkdir -p apps/iOS/MNNLLMChat
+          mv MNN-iOS-CPU-GPU/Static/MNN.framework apps/iOS/MNNLLMChat/
+          echo "Framework moved successfully."
+          ls -l apps/iOS/MNNLLMChat/
 
-      - name: Upload iOS Build Artifact
+      # --- 第 4 步: 创建用于导出的 ExportOptions.plist 文件 ---
+      # 这个文件告诉 xcodebuild 如何打包 IPA，我们在这里指定不需要代码签名
+      - name: Create ExportOptions.plist
+        run: |
+          PLIST_PATH="apps/iOS/MNNLLMChat/ExportOptions.plist"
+          echo "Creating ${PLIST_PATH}..."
+          cat > ${PLIST_PATH} <<EOL
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>method</key>
+              <string>development</string>
+              <key>signingStyle</key>
+              <string>manual</string>
+              <key>provisioningProfiles</key>
+              <dict/>
+              <key>signingCertificate</key>
+              <string></string>
+              <key>teamID</key>
+              <string></string>
+          </dict>
+          </plist>
+          EOL
+          echo "ExportOptions.plist created."
+
+      # --- 第 5 步: 构建并导出未签名的 IPA 文件 ---
+      # 我们使用 xcodebuild 来编译 MNNLLMChat 这个 App
+      - name: Build and Export unsigned IPA
+        run: |
+          cd apps/iOS/MNNLLMChat
+
+          echo "Archiving project..."
+          # 'archive' 命令会编译项目并创建一个归档文件 .xcarchive
+          # -scheme MNNLLMiOS 来自于你的 pbxproj 文件
+          # CODE_SIGNING_ALLOWED=NO 告诉 Xcode 不要尝试任何签名
+          xcodebuild archive \
+            -project MNNLLMiOS.xcodeproj \
+            -scheme MNNLLMiOS \
+            -destination "generic/platform=iOS" \
+            -archivePath build/MNNLLMChat.xcarchive \
+            CODE_SIGNING_ALLOWED=NO
+
+          echo "Exporting IPA..."
+          # 'exportArchive' 命令将归档文件打包成最终的 .ipa 文件
+          xcodebuild -exportArchive \
+            -archivePath build/MNNLLMChat.xcarchive \
+            -exportPath build/ipa \
+            -exportOptionsPlist ExportOptions.plist
+
+          echo "IPA exported successfully."
+          
+      # --- 第 6 步: 上传 IPA 文件作为产物 ---
+      # 将编译好的 IPA 文件上传，这样您就可以在 Actions 页面下载它了
+      - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ios-framework
-          path: ios_build/
+          name: MNNLLMChat-iOS-unsigned
+          # 路径可能会根据 Xcode 版本有些许不同，这里使用通配符确保能找到
+          path: apps/iOS/MNNLLMChat/build/ipa/*.ipa
+          if-no-files-found: error # 如果没找到文件，就让任务失败
