@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 77;
+	objectVersion = 56;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -218,18 +218,18 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
-				LastSwiftUpdateCheck = 1620;
-				LastUpgradeCheck = 1620;
+				LastSwiftUpdateCheck = 1540;
+				LastUpgradeCheck = 1540;
 				TargetAttributes = {
 					3E8591FD2D1D45070067B46F = {
-						CreatedOnToolsVersion = 16.2;
+						CreatedOnToolsVersion = 15.4;
 					};
 					3E85920E2D1D45080067B46F = {
-						CreatedOnToolsVersion = 16.2;
+						CreatedOnToolsVersion = 15.4;
 						TestTargetID = 3E8591FD2D1D45070067B46F;
 					};
 					3E8592182D1D45090067B46F = {
-						CreatedOnToolsVersion = 16.2;
+						CreatedOnToolsVersion = 15.4;
 						TestTargetID = 3E8591FD2D1D45070067B46F;
 					};
 				};
@@ -249,7 +249,7 @@
 				3EC8DF822E4DCDF500861131 /* XCRemoteSwiftPackageReference "Chat" */,
 				3EC8DF832E4DCF4A00861131 /* XCRemoteSwiftPackageReference "swift-transformers" */,
 			);
-			preferredProjectObjectVersion = 77;
+			preferredProjectObjectVersion = 56;
 			productRefGroup = 3E8591FF2D1D45070067B46F /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
