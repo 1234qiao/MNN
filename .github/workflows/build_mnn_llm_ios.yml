@@ -1,6 +1,6 @@
-# .github/workflows/build_mnn_llm_ios.yml (v12 - Correct and Final)
+# .github/workflows/build_mnn_llm_ios.yml (v13 - Final Strategy: Use Pre-built Framework)
 
-name: Build MNN LLM iOS App
+name: Build MNN LLM iOS App (using pre-built framework)
 
 on:
   workflow_dispatch:
@@ -13,28 +13,74 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-ios-app:
-    name: Build MNNLLMChat IPA on macOS 14
+  build-ipa:
+    name: Build MNNLLMChat IPA
     runs-on: macos-14
 
     steps:
-      - name: Checkout repository
+      # 步骤 1: 检出App代码
+      - name: Checkout App Repository
         uses: actions/checkout@v4
         with:
-          submodules: 'recursive'
+          # 不再需要检出 MNN 的子模块，因为我们不编译它
+          submodules: 'false'
 
-      - name: Build and Place MNN.framework
+      # 步骤 2: 下载预编译好的 MNN.framework
+      - name: Download Pre-built MNN.framework
+        uses: actions/download-artifact@v4
+        with:
+          name: MNN-framework-iOS # 必须和上传时的名字一致
+          path: apps/iOS/MNNLLMChat/MNN.framework # 直接解压到目标位置
+
+      # 步骤 3: 解决项目文件不兼容的最终方案
+      # 既然我们无法修复它，我们就绕过它！我们用 xcodegen 动态生成一个全新的、干净的工程文件。
+      - name: Install xcodegen and Generate Project
         run: |
-          echo "### Building MNN.framework with LLM support..."
-          sh package_scripts/ios/buildiOS.sh "-DMNN_ARM82=true -DMNN_LOW_MEMORY=true -DMNN_SUPPORT_TRANSFORMER_FUSE=true -DMNN_BUILD_LLM=true -DMNN_CPU_WEIGHT_DEQUANT_GEMM=true -DMNN_METAL=ON -DMNN_BUILD_DIFFUSION=ON -DMNN_BUILD_OPENCV=ON -DMNN_IMGCODECS=ON -DMNN_OPENCL=OFF -DMNN_SEP_BUILD=OFF -DMNN_SUPPORT_TRANSFORMER_FUSE=ON"
+          brew install xcodegen
           
-          echo "### Moving framework into App project..."
-          mv MNN-iOS-CPU-GPU/Static/MNN.framework apps/iOS/MNNLLMChat/
+          # 创建一个 project.yml 配置文件，这是 xcodegen 的蓝图
+          # 这是根据您的 pbxproj 文件逆向工程得到的最小化配置
+          cat > apps/iOS/MNNLLMChat/project.yml <<EOL
+          name: MNNLLMiOS
+          options:
+            bundleIdPrefix: com.yourcompany
+          targets:
+            MNNLLMiOS:
+              type: application
+              platform: iOS
+              deploymentTarget: "16.0"
+              sources: [MNNLLMiOS/]
+              settings:
+                base:
+                  SWIFT_VERSION: "5.0"
+                  DEVELOPMENT_TEAM: "YOUR_TEAM_ID" # Sideloadly 会覆盖这个，所以内容不重要
+                  CODE_SIGN_IDENTITY: ""
+                  CODE_SIGNING_REQUIRED: "NO"
+              dependencies:
+                - framework: MNN.framework
+                - package: SQLite.swift
+                - package: ExyteChat
+                - package: Transformers
+          packages:
+            SQLite.swift:
+              url: https://github.com/stephencelis/SQLite.swift
+              from: 0.15.3
+            ExyteChat:
+              url: https://github.com/Yogayu/Chat.git
+              branch: main
+            Transformers:
+              url: https://github.com/huggingface/swift-transformers/
+              from: 0.1.22
+          EOL
 
+          # 运行 xcodegen 来生成一个全新的、干净的 .xcodeproj 文件
+          cd apps/iOS/MNNLLMChat
+          xcodegen generate
+
+      # 步骤 4: 构建并导出 IPA
       - name: Build and Export unsigned IPA
         run: |
           cd apps/iOS/MNNLLMChat
-          echo "### Archiving the application..."
           xcodebuild archive \
             -project MNNLLMiOS.xcodeproj \
             -scheme MNNLLMiOS \
@@ -43,22 +89,12 @@ jobs:
             -configuration Release \
             CODE_SIGNING_ALLOWED=NO
 
-          echo "### Exporting the archive to an IPA..."
           xcodebuild -exportArchive \
             -archivePath build/MNNLLMChat.xcarchive \
             -exportPath build/ipa \
-            -exportOptionsPlist <(cat <<EOF
-            <?xml version="1.0" encoding="UTF-8"?>
-            <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-            <plist version="1.0">
-            <dict>
-                <key>method</key>
-                <string>development</string>
-            </dict>
-            </plist>
-            EOF
-            )
-
+            -exportOptionsPlist <(echo '<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>method</key><string>development</string></dict></plist>')
+            
+      # 步骤 5: 上传 IPA
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
         with:
