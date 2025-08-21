@@ -1,4 +1,4 @@
-# .github/workflows/build_mnn_llm_ios.yml (v14 - Final Solution: xcodegen)
+# .github/workflows/build_mnn_llm_ios.yml (v15 - The Final Solution: rm + xcodegen)
 
 name: Build MNN LLM iOS App
 
@@ -15,7 +15,6 @@ concurrency:
 jobs:
   build-ipa-from-scratch:
     name: Build IPA with xcodegen
-    # 关键 1: 锁定在稳定、可靠的 macos-14 (Xcode 15) 环境
     runs-on: macos-14
 
     steps:
@@ -25,7 +24,7 @@ jobs:
         with:
           submodules: 'recursive'
 
-      # 步骤 2: 编译 MNN.framework (这一步没有变)
+      # 步骤 2: 编译 MNN.framework
       - name: Build and Place MNN.framework
         run: |
           echo "### Building MNN.framework with LLM support..."
@@ -34,30 +33,35 @@ jobs:
           echo "### Moving framework into App project..."
           mv MNN-iOS-CPU-GPU/Static/MNN.framework apps/iOS/MNNLLMChat/
 
-      # 步骤 3: [终极修复] 使用 xcodegen 重新生成项目文件
-      - name: Generate compatible Xcode project
+      # 步骤 3: [终极修复] 删除旧项目，然后用 xcodegen 重新生成
+      - name: Regenerate Xcode Project
         run: |
           echo "### Installing xcodegen..."
           brew install xcodegen
           
-          # 定义一个 project.yml 配置文件，这是 xcodegen 的蓝图
-          # 这个配置是根据您仓库的结构和依赖关系精心编写的
-          cat > apps/iOS/MNNLLMChat/project.yml <<EOL
+          APP_DIR="apps/iOS/MNNLLMChat"
+
+          # [关键一步] 彻底删除旧的、不兼容的 .xcodeproj 文件
+          echo "### Removing old, incompatible .xcodeproj to ensure a clean generation..."
+          rm -rf "${APP_DIR}/MNNLLMiOS.xcodeproj"
+          
+          # 创建 xcodegen 的配置文件
+          cat > "${APP_DIR}/project.yml" <<EOL
           name: MNNLLMiOS
           options:
-            bundleIdPrefix: com.yourcompany # 这个不重要，Sideloadly会覆盖
+            bundleIdPrefix: com.yourcompany
           targets:
             MNNLLMiOS:
               type: application
               platform: iOS
-              deploymentTarget: "16.0" # 确保版本兼容
-              sources: [MNNLLMiOS/] # App 的所有源文件
+              deploymentTarget: "16.0"
+              sources: [MNNLLMiOS/]
               info:
-                path: MNNLLMiOS/Info.plist # 指向现有的Info.plist
+                path: MNNLLMiOS/Info.plist
               settings:
                 base:
                   SWIFT_VERSION: "5.0"
-                  DEVELOPMENT_TEAM: "YOUR_TEAM_ID" # 占位符
+                  DEVELOPMENT_TEAM: "YOUR_TEAM_ID"
               dependencies:
                 - framework: MNN.framework
                 - package: SQLite.swift
@@ -75,12 +79,11 @@ jobs:
               from: 0.1.22
           EOL
 
-          echo "### Generating new Xcode project..."
-          cd apps/iOS/MNNLLMChat
-          # 运行 xcodegen, 它会读取 project.yml 并生成一个全新的、干净的 .xcodeproj
+          echo "### Generating new, compatible Xcode project..."
+          cd "${APP_DIR}"
           xcodegen generate
 
-      # 步骤 4: 构建并导出 IPA (现在使用新生成的项目文件)
+      # 步骤 4: 构建并导出 IPA
       - name: Build and Export unsigned IPA
         run: |
           cd apps/iOS/MNNLLMChat
