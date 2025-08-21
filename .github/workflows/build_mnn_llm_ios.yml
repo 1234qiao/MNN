@@ -1,0 +1,120 @@
+# .github/workflows/build_mnn_llm_ios.yml (v3 - Final & Verified)
+
+name: Build MNN LLM iOS App
+
+on:
+  # 允许您在 Actions 页面手动点击 "Run workflow" 来触发
+  workflow_dispatch:
+  # 也可以在代码推送到 master 分支时自动触发
+  # 为了节省配额，您可以暂时注释掉 push 触发，只使用手动触发
+  push:
+    branches:
+      - master # 仅在 master 分支推送时触发
+    paths:
+      # 仅在关键文件变化时触发，避免不必要的构建
+      - 'apps/iOS/MNNLLMChat/**'
+      - 'package_scripts/ios/**'
+      - 'source/**'
+      - '.github/workflows/build_mnn_llm_ios.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-ios-app:
+    name: Build MNNLLMChat IPA
+    # 使用 GitHub 提供的最新版 macOS 虚拟机 (通常是 macOS-13 或 macOS-14)
+    runs-on: macos-latest
+
+    steps:
+      # --- 步骤 1: 检出代码 ---
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+
+      # --- 步骤 2: 编译 MNN.framework (启用LLM) ---
+      - name: Build and Place MNN.framework
+        run: |
+          echo "### Starting MNN.framework build with LLM support..."
+          # 严格按照 MNNLLMChat README 的指引来构建，长参数用引号包裹
+          sh package_scripts/ios/buildiOS.sh "-DMNN_ARM82=true -DMNN_LOW_MEMORY=true -DMNN_SUPPORT_TRANSFORMER_FUSE=true -DMNN_BUILD_LLM=true -DMNN_CPU_WEIGHT_DEQUANT_GEMM=true -DMNN_METAL=ON -DMNN_BUILD_DIFFUSION=ON -DMNN_BUILD_OPENCV=ON -DMNN_IMGCODECS=ON -DMNN_OPENCL=OFF -DMNN_SEP_BUILD=OFF -DMNN_SUPPORT_TRANSFORMER_FUSE=ON"
+          
+          echo "### Moving framework into App project..."
+          # 将编译好的产物移动到 App 项目的正确位置
+          mv MNN-iOS-CPU-GPU/Static/MNN.framework apps/iOS/MNNLLMChat/
+          
+          echo "### Framework successfully placed at:"
+          ls -ld apps/iOS/MNNLLMChat/MNN.framework
+
+      # --- 步骤 3: [关键修复] 强制降低项目的iOS部署版本 ---
+      - name: Patch iOS Deployment Target in Xcode Project
+        run: |
+          echo "### Forcing iOS Deployment Target to a compatible version (e.g., 16.0)..."
+          PROJECT_FILE="apps/iOS/MNNLLMChat/MNNLLMiOS.xcodeproj/project.pbxproj"
+          
+          # 这个 sed 命令会查找所有要求 iOS 17.x 或 18.x 或 19.x 的设置，并将其强制降级为 16.0
+          # 这是为了解决 CI 虚拟机中 Xcode SDK 版本过旧的问题
+          # 使用 -i.bak 参数直接修改文件并创建一个备份
+          sed -i.bak 's/\(IPHONEOS_DEPLOYMENT_TARGET = \)1[7-9][.0-9]*;/\116.0;/g' "${PROJECT_FILE}"
+          
+          echo "### Project file patched. Verifying changes:"
+          # 打印出修改后的行来确认，确保补丁已生效
+          grep "IPHONEOS_DEPLOYMENT_TARGET" "${PROJECT_FILE}"
+      
+      # --- 步骤 4: 构建并导出未签名的 IPA 文件 ---
+      - name: Build and Export unsigned IPA
+        run: |
+          cd apps/iOS/MNNLLMChat
+
+          echo "### Archiving the application..."
+          # 使用 xcodebuild archive 来编译和归档 App
+          # -scheme MNNLLMiOS 来自于项目文件，是我们要构建的目标
+          # -configuration Release 使用发布配置以获得优化
+          # CODE_SIGNING_ALLOWED=NO 告诉 Xcode 不要进行代码签名
+          xcodebuild archive \
+            -project MNNLLMiOS.xcodeproj \
+            -scheme MNNLLMiOS \
+            -destination "generic/platform=iOS" \
+            -archivePath build/MNNLLMChat.xcarchive \
+            -configuration Release \
+            CODE_SIGNING_ALLOWED=NO
+
+          echo "### Exporting the archive to an IPA..."
+          # 使用 xcodebuild -exportArchive 将归档文件打包成 .ipa
+          # 我们在这里直接用命令行创建 ExportOptions.plist，指定一个无需签名的开发导出
+          xcodebuild -exportArchive \
+            -archivePath build/MNNLLMChat.xcarchive \
+            -exportPath build/ipa \
+            -exportOptionsPlist <(cat <<EOF
+            <?xml version="1.0" encoding="UTF-8"?>
+            <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+            <plist version="1.0">
+            <dict>
+                <key>method</key>
+                <string>development</string>
+                <key>signingStyle</key>
+                <string>manual</string>
+                <key>provisioningProfiles</key>
+                <dict/>
+                <key>signingCertificate</key>
+                <string></string>
+                <key>teamID</key>
+                <string></string>
+            </dict>
+            </plist>
+            EOF
+            )
+
+          echo "### IPA exported successfully to build/ipa/"
+          ls -lh build/ipa/
+
+      # --- 步骤 5: 上传 IPA 文件作为产物 ---
+      - name: Upload IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MNNLLMChat-iOS-unsigned-IPA
+          path: apps/iOS/MNNLLMChat/build/ipa/*.ipa
+          if-no-files-found: error # 如果没找到文件，就让任务失败
+          retention-days: 7 # 产物只保留7天，以节省您的存储空间
