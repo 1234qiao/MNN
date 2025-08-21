@@ -1,4 +1,4 @@
-# .github/workflows/build_mnn_llm_ios.yml (v5 - Enhanced Debugging)
+# .github/workflows/build_mnn_llm_ios.yml (v10 - Pinning to Stable Environment)
 
 name: Build MNN LLM iOS App
 
@@ -7,11 +7,6 @@ on:
   push:
     branches:
       - master
-    paths:
-      - 'apps/iOS/MNNLLMChat/**'
-      - 'package_scripts/ios/**'
-      - 'source/**'
-      - '.github/workflows/build_mnn_llm_ios.yml'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -19,71 +14,41 @@ concurrency:
 
 jobs:
   build-ios-app:
-    name: Build MNNLLMChat IPA
-    runs-on: macos-latest
+    name: Build MNNLLMChat IPA on macOS 14
+    # [关键修复] 明确指定一个稳定的虚拟机环境，避免使用可能存在问题的 `macos-latest`
+    runs-on: macos-14
 
     steps:
-      # --- 步骤 1: 检出代码 ---
+      # 步骤 1: 检出代码
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           submodules: 'recursive'
 
-      # --- 步骤 2: 编译 MNN.framework (启用LLM) ---
+      # 步骤 2: 编译 MNN.framework
       - name: Build and Place MNN.framework
         run: |
-          echo "### 1. Current directory before build:"
-          pwd
-
-          echo "### 2. Starting MNN.framework build with LLM support..."
+          echo "### Building MNN.framework with LLM support..."
           sh package_scripts/ios/buildiOS.sh "-DMNN_ARM82=true -DMNN_LOW_MEMORY=true -DMNN_SUPPORT_TRANSFORMER_FUSE=true -DMNN_BUILD_LLM=true -DMNN_CPU_WEIGHT_DEQUANT_GEMM=true -DMNN_METAL=ON -DMNN_BUILD_DIFFUSION=ON -DMNN_BUILD_OPENCV=ON -DMNN_IMGCODECS=ON -DMNN_OPENCL=OFF -DMNN_SEP_BUILD=OFF -DMNN_SUPPORT_TRANSFORMER_FUSE=ON"
           
-          echo "### 3. Build finished. Listing contents of output directory:"
-          ls -lR MNN-iOS-CPU-GPU/
-          
-          echo "### 4. Moving framework into App project..."
+          echo "### Moving framework into App project..."
           mv MNN-iOS-CPU-GPU/Static/MNN.framework apps/iOS/MNNLLMChat/
-          
-          echo "### 5. Framework successfully placed. Verifying location and permissions:"
-          ls -ld apps/iOS/MNNLLMChat/MNN.framework
 
-      # --- 步骤 3: [关键修复] 强制降低项目的iOS部署版本 ---
-      - name: Patch iOS Deployment Target in Xcode Project
-        run: |
-          PROJECT_FILE="apps/iOS/MNNLLMChat/MNNLLMiOS.xcodeproj/project.pbxproj"
-          echo "### Forcing iOS Deployment Target to a compatible version (16.0)..."
-          echo "### File to patch: ${PROJECT_FILE}"
-          
-          echo "--- Content BEFORE patching (lines containing target version): ---"
-          grep "IPHONEOS_DEPLOYMENT_TARGET" "${PROJECT_FILE}"
-          
-          # 使用 sed 命令替换所有 IPHONEOS_DEPLOYMENT_TARGET 的值为 16.0
-          sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = [^;]*;/IPHONEOS_DEPLOYMENT_TARGET = 16.0;/g' "${PROJECT_FILE}"
-          
-          echo "--- Content AFTER patching (lines containing target version): ---"
-          grep "IPHONEOS_DEPLOYMENT_TARGET" "${PROJECT_FILE}"
-          
-          echo "### Verifying patch was successful..."
-          if grep -q "IPHONEOS_DEPLOYMENT_TARGET = 1[7-9]" "${PROJECT_FILE}"; then
-            echo "::error::Patch FAILED! Still found high deployment target."
-            exit 1
-          else
-            echo "::notice::Patch successful! All deployment targets are now 16.0 or lower."
-          fi
-      
-      # --- 步骤 4: 构建并导出未签名的 IPA 文件 ---
+      # 步骤 3: 构建并导出 IPA (使用命令行强制覆盖部署版本)
       - name: Build and Export unsigned IPA
         run: |
           cd apps/iOS/MNNLLMChat
 
-          echo "### Archiving the application..."
+          echo "### Archiving the application with Deployment Target Override..."
+          # 在 Xcode 15 (macos-14) 环境下，这个命令将强制项目使用 iOS 17 SDK 来构建一个兼容 iOS 16 的 App
           xcodebuild archive \
             -project MNNLLMiOS.xcodeproj \
             -scheme MNNLLMiOS \
             -destination "generic/platform=iOS" \
             -archivePath build/MNNLLMChat.xcarchive \
             -configuration Release \
-            CODE_SIGNING_ALLOWED=NO
+            CODE_SIGNING_ALLOWED=NO \
+            IPHONEOS_DEPLOYMENT_TARGET=16.0
 
           echo "### Exporting the archive to an IPA..."
           xcodebuild -exportArchive \
@@ -105,10 +70,10 @@ jobs:
             EOF
             )
 
-          echo "### IPA exported successfully. Final files:"
-          ls -lR build/ipa/
+          echo "### IPA exported successfully:"
+          ls -lh build/ipa/
 
-      # --- 步骤 5: 上传 IPA 文件作为产物 ---
+      # 步骤 4: 上传 IPA 文件作为产物
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
         with:
