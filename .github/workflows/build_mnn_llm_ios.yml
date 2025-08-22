@@ -1,4 +1,4 @@
-# .github/workflows/build_mnn_llm_ios.yml (v32 - Verified by Logs)
+# .github/workflows/build_mnn_llm_ios.yml (v33 - 终极精确版)
 
 name: Build MNN LLM iOS App
 
@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   build-ipa-on-latest:
-    name: Build IPA on macos-latest (Verified)
+    name: Build IPA on macos-latest (终极精确版)
     runs-on: macos-latest
 
     steps:
@@ -28,7 +28,6 @@ jobs:
           sh package_scripts/ios/buildiOS.sh "-DMNN_ARM82=true -DMNN_LOW_MEMORY=true -DMNN_SUPPORT_TRANSFORMER_FUSE=true -DMNN_BUILD_LLM=true -DMNN_CPU_WEIGHT_DEQUANT_GEMM=true -DMNN_METAL=ON -DMNN_BUILD_DIFFUSION=ON -DMNN_BUILD_OPENCV=ON -DMNN_IMGCODECS=ON -DMNN_OPENCL=OFF -DMNN_SEP_BUILD=OFF -DMNN_SUPPORT_TRANSFORMER_FUSE=ON"
           mv MNN-iOS-CPU-GPU/Static/MNN.framework apps/iOS/MNNLLMChat/
 
-      # 这一步提供了我们需要的证据，现在已不再需要检查它的输出了
       - name: List Available Simulators (Diagnostic Step)
         run: |
           echo "### Listing all available devices and simulators..."
@@ -38,13 +37,16 @@ jobs:
         run: |
           cd apps/iOS/MNNLLMChat
 
-          echo "### Archiving the project with a verified SIMULATOR destination..."
-          # 关键修正：使用从上一步日志中验证过的确切模拟器名称。
+          echo "### Archiving the project with an ultra-specific SIMULATOR destination..."
+          # 
+          # 最终修正：从日志中明确指定操作系统的版本。
+          # 我们通过提供确切的名称 AND 操作系统版本来消除所有歧义。
+          # 
           xcodebuild archive \
             -project MNNLLMiOS.xcodeproj \
             -scheme MNNLLMiOS \
             -sdk iphonesimulator \
-            -destination 'platform=iOS Simulator,name=iPhone SE (3rd generation)' \
+            -destination 'platform=iOS Simulator,name=iPhone SE (3rd generation),OS=18.4' \
             -archivePath build/MNNLLMChat.xcarchive \
             -configuration Release \
             CODE_SIGNING_ALLOWED=NO
