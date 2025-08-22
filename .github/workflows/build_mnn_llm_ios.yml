@@ -1,4 +1,4 @@
-# .github/workflows/build_mnn_llm_ios.yml (v33 - 终极精确版)
+# .github/workflows/build_mnn_llm_ios.yml (v34 - 终极手段：UUID 与 降级)
 
 name: Build MNN LLM iOS App
 
@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   build-ipa-on-latest:
-    name: Build IPA on macos-latest (终极精确版)
+    name: Build IPA on macos-latest (终极手段)
     runs-on: macos-latest
 
     steps:
@@ -28,25 +28,35 @@ jobs:
           sh package_scripts/ios/buildiOS.sh "-DMNN_ARM82=true -DMNN_LOW_MEMORY=true -DMNN_SUPPORT_TRANSFORMER_FUSE=true -DMNN_BUILD_LLM=true -DMNN_CPU_WEIGHT_DEQUANT_GEMM=true -DMNN_METAL=ON -DMNN_BUILD_DIFFUSION=ON -DMNN_BUILD_OPENCV=ON -DMNN_IMGCODECS=ON -DMNN_OPENCL=OFF -DMNN_SEP_BUILD=OFF -DMNN_SUPPORT_TRANSFORMER_FUSE=ON"
           mv MNN-iOS-CPU-GPU/Static/MNN.framework apps/iOS/MNNLLMChat/
 
-      - name: List Available Simulators (Diagnostic Step)
+      # 新增步骤：强制降低项目文件中的iOS部署目标版本
+      - name: Force Downgrade iOS Deployment Target
         run: |
-          echo "### Listing all available devices and simulators..."
-          xcrun simctl list devices available
+          echo "### Forcing iOS Deployment Target to 16.0 to avoid SDK issues..."
+          PROJECT_FILE="apps/iOS/MNNLLMChat/MNNLLMiOS.xcodeproj/project.pbxproj"
+          # 这会查找所有 "IPHONEOS_DEPLOYMENT_TARGET = xx.x;" 的行并替换为 16.0
+          sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9][0-9]\.[0-9];/IPHONEOS_DEPLOYMENT_TARGET = 16.0;/g' "${PROJECT_FILE}"
+          sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9][0-9]\.[0-9][0-9];/IPHONEOS_DEPLOYMENT_TARGET = 16.0;/g' "${PROJECT_FILE}"
+          echo "### Project file modified."
 
       - name: Build and Archive for Simulator
         run: |
           cd apps/iOS/MNNLLMChat
 
-          echo "### Archiving the project with an ultra-specific SIMULATOR destination..."
+          echo "### Finding simulator UUID..."
+          # 从 xcrun list 中找到 iPhone SE (3rd generation) for iOS 18.4 的 UUID
+          # 请注意：这个UUID (BB113DCC-3130-46D7-BDF5-4EFA1573219A) 是从你之前的日志里复制的，它应该是稳定的
+          SIMULATOR_UUID="BB113DCC-3130-46D7-BDF5-4EFA1573219A"
+          echo "### Using UUID: ${SIMULATOR_UUID}"
+
+          echo "### Archiving the project with a specific SIMULATOR UUID..."
           # 
-          # 最终修正：从日志中明确指定操作系统的版本。
-          # 我们通过提供确切的名称 AND 操作系统版本来消除所有歧义。
+          # 最终修正：使用最底层的 UUID 来指定设备
           # 
           xcodebuild archive \
             -project MNNLLMiOS.xcodeproj \
             -scheme MNNLLMiOS \
             -sdk iphonesimulator \
-            -destination 'platform=iOS Simulator,name=iPhone SE (3rd generation),OS=18.4' \
+            -destination "id=${SIMULATOR_UUID}" \
             -archivePath build/MNNLLMChat.xcarchive \
             -configuration Release \
             CODE_SIGNING_ALLOWED=NO
@@ -54,7 +64,7 @@ jobs:
       - name: Create ExportOptions.plist and Export IPA
         run: |
           cd apps/iOS/MNNLLMChat
-          echo "### Creating ExportOptions.plist for unsigned IPA..."
+          # 后续步骤保持不变...
           EXPORT_PLIST_PATH="build/ExportOptions.plist"
           cat > "${EXPORT_PLIST_PATH}" <<EOL
           <?xml version="1.0" encoding="UTF-8"?>
@@ -71,7 +81,6 @@ jobs:
           </plist>
           EOL
           
-          echo "### Exporting the archive to an IPA..."
           xcodebuild -exportArchive \
             -archivePath build/MNNLLMChat.xcarchive \
             -exportPath build/ipa \
