@@ -1,4 +1,4 @@
-# .github/workflows/build_mnn_llm_ios.yml (v21 - Pre-Mortem Corrected)
+# .github/workflows/build_mnn_llm_ios.yml (v26-PlanA)
 
 name: Build MNN LLM iOS App
 
@@ -13,9 +13,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-ipa-from-scratch:
-    name: Build IPA with xcodegen (Pre-Mortem Corrected)
-    runs-on: macos-14
+  build-ipa-on-latest:
+    name: Build IPA on macos-latest with SDK Fix
+    runs-on: macos-latest # 使用 Xcode 16
 
     steps:
       - name: Checkout repository
@@ -28,73 +28,21 @@ jobs:
           sh package_scripts/ios/buildiOS.sh "-DMNN_ARM82=true -DMNN_LOW_MEMORY=true -DMNN_SUPPORT_TRANSFORMER_FUSE=true -DMNN_BUILD_LLM=true -DMNN_CPU_WEIGHT_DEQUANT_GEMM=true -DMNN_METAL=ON -DMNN_BUILD_DIFFUSION=ON -DMNN_BUILD_OPENCV=ON -DMNN_IMGCODECS=ON -DMNN_OPENCL=OFF -DMNN_SEP_BUILD=OFF -DMNN_SUPPORT_TRANSFORMER_FUSE=ON"
           mv MNN-iOS-CPU-GPU/Static/MNN.framework apps/iOS/MNNLLMChat/
 
-      - name: Regenerate Xcode Project with Full Configuration
-        run: |
-          echo "### Installing xcodegen..."
-          brew install xcodegen
-          
-          APP_DIR="apps/iOS/MNNLLMChat"
-
-          echo "### Performing full cleanup of old project files..."
-          # 关键点 1: 彻底清理，移除目录和任何残留的 pbxproj 文件
-          rm -rf "${APP_DIR}/MNNLLMiOS.xcodeproj"
-          rm -f "${APP_DIR}/project.pbxproj"
-          
-          echo "### Creating complete project.yml file..."
-          # 关键点 2: 提供了更完整的构建设置，特别是 Bridging Header 和 Framework Search Path
-          cat > "${APP_DIR}/project.yml" <<EOL
-          name: MNNLLMiOS
-          options:
-            bundleIdPrefix: com.yourcompany
-          targets:
-            MNNLLMiOS:
-              type: application
-              platform: iOS
-              deploymentTarget: "16.0"
-              sources: [MNNLLMiOS/]
-              info:
-                path: MNNLLMiOS/Info.plist
-              settings:
-                base:
-                  SWIFT_VERSION: "5.0"
-                  DEVELOPMENT_TEAM: "YOUR_TEAM_ID"
-                  SWIFT_OBJC_BRIDGING_HEADER: "MNNLLMiOS/MNNLLMiOS-Bridging-Header.h"
-                  FRAMEWORK_SEARCH_PATHS: "$(inherited) $(PROJECT_DIR)"
-              dependencies:
-                - framework: MNN.framework
-                - package: SQLite.swift
-                - package: ExyteChat
-                - package: Transformers
-          packages:
-            SQLite.swift:
-              url: https://github.com/stephencelis/SQLite.swift
-              from: 0.15.3
-            ExyteChat:
-              url: https://github.com/Yogayu/Chat.git
-              branch: main
-            Transformers:
-              url: https://github.com/huggingface/swift-transformers/
-              from: 0.1.22
-          EOL
-          
-          echo "### Generating new Xcode project from yml..."
-          cd "${APP_DIR}"
-          xcodegen generate
-
       - name: Build and Export unsigned IPA
         run: |
           cd apps/iOS/MNNLLMChat
 
-          echo "### Archiving the newly generated project..."
+          # 关键修正：添加 -sdk iphoneos 来解决 "iOS 18.0 not installed" 的问题
           xcodebuild archive \
             -project MNNLLMiOS.xcodeproj \
             -scheme MNNLLMiOS \
+            -sdk iphoneos \
             -destination "generic/platform=iOS" \
             -archivePath build/MNNLLMChat.xcarchive \
             -configuration Release \
             CODE_SIGNING_ALLOWED=NO
 
-          echo "### Creating ExportOptions.plist for unsigned IPA..."
+          # ... [导出 IPA 的部分保持不变] ...
           EXPORT_PLIST_PATH="build/ExportOptions.plist"
           cat > "${EXPORT_PLIST_PATH}" <<EOL
           <?xml version="1.0" encoding="UTF-8"?>
@@ -107,15 +55,10 @@ jobs:
               <string>manual</string>
               <key>provisioningProfiles</key>
               <dict/>
-              <key>teamID</key>
-              <string>YOUR_TEAM_ID</string> 
-              <key>signingCertificate</key>
-              <string></string>
           </dict>
           </plist>
           EOL
           
-          echo "### Exporting the archive to an IPA..."
           xcodebuild -exportArchive \
             -archivePath build/MNNLLMChat.xcarchive \
             -exportPath build/ipa \
