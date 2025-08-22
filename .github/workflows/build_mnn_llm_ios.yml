@@ -1,4 +1,4 @@
-# .github/workflows/build_mnn_llm_ios.yml (v27 - The Final Touch)
+# .github/workflows/build_mnn_llm_ios.yml (v28 - The Correct Destination)
 
 name: Build MNN LLM iOS App
 
@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   build-ipa-on-latest:
-    name: Build IPA on macos-latest (Final Touch)
+    name: Build IPA on macos-latest (Correct Destination)
     runs-on: macos-latest
 
     steps:
@@ -32,17 +32,16 @@ jobs:
         run: |
           cd apps/iOS/MNNLLMChat
 
-          echo "### Archiving the original project on Xcode 16 with explicit deployment target..."
-          # 关键修正：在命令行中明确覆盖 IPHONEOS_DEPLOYMENT_TARGET。
-          # 这会强制 Xcode 使用一个更早的、肯定已安装的 SDK 版本进行编译，从而绕开 "iOS 18.0 not installed" 的问题。
+          echo "### Archiving the project with a specific device destination..."
+          # 关键修正：将通用的 generic destination 替换为一个具体的设备类型。
+          # 这将强制 xcodebuild 使用一个已完全安装的 SDK，而不是最新的、不完整的 SDK。
           xcodebuild archive \
             -project MNNLLMiOS.xcodeproj \
             -scheme MNNLLMiOS \
             -sdk iphoneos \
-            -destination "generic/platform=iOS" \
+            -destination 'platform=iOS,name=iPhone' \
             -archivePath build/MNNLLMChat.xcarchive \
             -configuration Release \
-            IPHONEOS_DEPLOYMENT_TARGET=17.0 \
             CODE_SIGNING_ALLOWED=NO
 
           echo "### Creating ExportOptions.plist for unsigned IPA..."
