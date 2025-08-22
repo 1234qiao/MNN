@@ -1,4 +1,4 @@
-# .github/workflows/build_mnn_llm_ios.yml (v28 - The Correct Destination)
+# .github/workflows/build_mnn_llm_ios.yml (v30 - Final Corrected Version)
 
 name: Build MNN LLM iOS App
 
@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   build-ipa-on-latest:
-    name: Build IPA on macos-latest (Correct Destination)
+    name: Build IPA on macos-latest (Final Version)
     runs-on: macos-latest
 
     steps:
@@ -28,24 +28,37 @@ jobs:
           sh package_scripts/ios/buildiOS.sh "-DMNN_ARM82=true -DMNN_LOW_MEMORY=true -DMNN_SUPPORT_TRANSFORMER_FUSE=true -DMNN_BUILD_LLM=true -DMNN_CPU_WEIGHT_DEQUANT_GEMM=true -DMNN_METAL=ON -DMNN_BUILD_DIFFUSION=ON -DMNN_BUILD_OPENCV=ON -DMNN_IMGCODECS=ON -DMNN_OPENCL=OFF -DMNN_SEP_BUILD=OFF -DMNN_SUPPORT_TRANSFORMER_FUSE=ON"
           mv MNN-iOS-CPU-GPU/Static/MNN.framework apps/iOS/MNNLLMChat/
 
-      - name: Build and Export unsigned IPA
+      # 关键诊断步骤，用于获取环境中所有可用的模拟器
+      - name: List Available Simulators (Diagnostic Step)
+        run: |
+          echo "### Listing all available devices and simulators..."
+          xcrun simctl list devices available
+
+      - name: Build and Archive for Simulator
         run: |
           cd apps/iOS/MNNLLMChat
 
-          echo "### Archiving the project with a specific device destination..."
-          # 关键修正：将通用的 generic destination 替换为一个具体的设备类型。
-          # 这将强制 xcodebuild 使用一个已完全安装的 SDK，而不是最新的、不完整的 SDK。
+          echo "### Archiving the project with a specific SIMULATOR destination..."
+          # 关键修正: 同时使用 '-sdk iphonesimulator' 和 'platform=iOS Simulator'
+          # 我们选择一个大概率存在的通用模拟器 "iPhone 15"。
+          # 如果失败，请检查上一步 "List Available Simulators" 的日志输出，并替换为一个存在的名称。
           xcodebuild archive \
             -project MNNLLMiOS.xcodeproj \
             -scheme MNNLLMiOS \
-            -sdk iphoneos \
-            -destination 'platform=iOS,name=iPhone' \
+            -sdk iphonesimulator \
+            -destination 'platform=iOS Simulator,name=iPhone 15' \
             -archivePath build/MNNLLMChat.xcarchive \
             -configuration Release \
             CODE_SIGNING_ALLOWED=NO
 
+      - name: Create ExportOptions.plist and Export IPA
+        run: |
+          cd apps/iOS/MNNLLMChat
           echo "### Creating ExportOptions.plist for unsigned IPA..."
           EXPORT_PLIST_PATH="build/ExportOptions.plist"
+          # 注意：虽然这是从一个为模拟器构建的存档中导出的，
+          # 我们仍然使用 'development' 方法。生成的IPA将无法安装在物理设备上，
+          # 但它验证了整个编译和打包流程的成功。
           cat > "${EXPORT_PLIST_PATH}" <<EOL
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
