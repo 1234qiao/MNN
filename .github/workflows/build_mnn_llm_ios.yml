@@ -1,4 +1,4 @@
-# .github/workflows/build_mnn_llm_ios.yml (v19 - The Corrected Final Version)
+# .github/workflows/build_mnn_llm_ios.yml (v21 - Pre-Mortem Corrected)
 
 name: Build MNN LLM iOS App
 
@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   build-ipa-from-scratch:
-    name: Build IPA with xcodegen (Correct Pathing & Logic)
+    name: Build IPA with xcodegen (Pre-Mortem Corrected)
     runs-on: macos-14
 
     steps:
@@ -28,18 +28,20 @@ jobs:
           sh package_scripts/ios/buildiOS.sh "-DMNN_ARM82=true -DMNN_LOW_MEMORY=true -DMNN_SUPPORT_TRANSFORMER_FUSE=true -DMNN_BUILD_LLM=true -DMNN_CPU_WEIGHT_DEQUANT_GEMM=true -DMNN_METAL=ON -DMNN_BUILD_DIFFUSION=ON -DMNN_BUILD_OPENCV=ON -DMNN_IMGCODECS=ON -DMNN_OPENCL=OFF -DMNN_SEP_BUILD=OFF -DMNN_SUPPORT_TRANSFORMER_FUSE=ON"
           mv MNN-iOS-CPU-GPU/Static/MNN.framework apps/iOS/MNNLLMChat/
 
-      - name: Regenerate Xcode Project
+      - name: Regenerate Xcode Project with Full Configuration
         run: |
           echo "### Installing xcodegen..."
           brew install xcodegen
           
           APP_DIR="apps/iOS/MNNLLMChat"
 
-          echo "### Deleting old project directory to ensure a clean slate..."
-          # 关键点 1: 这个删除是正确的，它移除了整个 .xcodeproj 包，包括内部被污染的 workspace。
+          echo "### Performing full cleanup of old project files..."
+          # 关键点 1: 彻底清理，移除目录和任何残留的 pbxproj 文件
           rm -rf "${APP_DIR}/MNNLLMiOS.xcodeproj"
+          rm -f "${APP_DIR}/project.pbxproj"
           
-          echo "### Creating project.yml file..."
+          echo "### Creating complete project.yml file..."
+          # 关键点 2: 提供了更完整的构建设置，特别是 Bridging Header 和 Framework Search Path
           cat > "${APP_DIR}/project.yml" <<EOL
           name: MNNLLMiOS
           options:
@@ -55,7 +57,9 @@ jobs:
               settings:
                 base:
                   SWIFT_VERSION: "5.0"
-                  DEVELOPMENT_TEAM: "YOUR_TEAM_ID" # This will be ignored due to CODE_SIGNING_ALLOWED=NO
+                  DEVELOPMENT_TEAM: "YOUR_TEAM_ID"
+                  SWIFT_OBJC_BRIDGING_HEADER: "MNNLLMiOS/MNNLLMiOS-Bridging-Header.h"
+                  FRAMEWORK_SEARCH_PATHS: "$(inherited) $(PROJECT_DIR)"
               dependencies:
                 - framework: MNN.framework
                 - package: SQLite.swift
@@ -82,7 +86,6 @@ jobs:
           cd apps/iOS/MNNLLMChat
 
           echo "### Archiving the newly generated project..."
-          # 关键点 2: 恢复使用 -project。因为项目是全新的，Xcode 15 可以正确处理其内部嵌套的 workspace 和 SPM 包。
           xcodebuild archive \
             -project MNNLLMiOS.xcodeproj \
             -scheme MNNLLMiOS \
@@ -92,7 +95,6 @@ jobs:
             CODE_SIGNING_ALLOWED=NO
 
           echo "### Creating ExportOptions.plist for unsigned IPA..."
-          # 关键点 3: 添加导出 IPA 所需的配置文件。
           EXPORT_PLIST_PATH="build/ExportOptions.plist"
           cat > "${EXPORT_PLIST_PATH}" <<EOL
           <?xml version="1.0" encoding="UTF-8"?>
@@ -106,7 +108,7 @@ jobs:
               <key>provisioningProfiles</key>
               <dict/>
               <key>teamID</key>
-              <string>YOUR_TEAM_ID</string>
+              <string>YOUR_TEAM_ID</string> 
               <key>signingCertificate</key>
               <string></string>
           </dict>
