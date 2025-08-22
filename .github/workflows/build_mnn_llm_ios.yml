@@ -1,4 +1,4 @@
-# .github/workflows/build_mnn_llm_ios.yml (v18 - The Workspace Fix)
+# .github/workflows/build_mnn_llm_ios.yml (v19 - The Corrected Final Version)
 
 name: Build MNN LLM iOS App
 
@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   build-ipa-from-scratch:
-    name: Build IPA with xcodegen (Workspace Fix)
+    name: Build IPA with xcodegen (Correct Pathing & Logic)
     runs-on: macos-14
 
     steps:
@@ -28,20 +28,18 @@ jobs:
           sh package_scripts/ios/buildiOS.sh "-DMNN_ARM82=true -DMNN_LOW_MEMORY=true -DMNN_SUPPORT_TRANSFORMER_FUSE=true -DMNN_BUILD_LLM=true -DMNN_CPU_WEIGHT_DEQUANT_GEMM=true -DMNN_METAL=ON -DMNN_BUILD_DIFFUSION=ON -DMNN_BUILD_OPENCV=ON -DMNN_IMGCODECS=ON -DMNN_OPENCL=OFF -DMNN_SEP_BUILD=OFF -DMNN_SUPPORT_TRANSFORMER_FUSE=ON"
           mv MNN-iOS-CPU-GPU/Static/MNN.framework apps/iOS/MNNLLMChat/
 
-      - name: Regenerate Xcode Project and Workspace
+      - name: Regenerate Xcode Project
         run: |
           echo "### Installing xcodegen..."
           brew install xcodegen
           
           APP_DIR="apps/iOS/MNNLLMChat"
 
-          echo "### Deleting old project and workspace to ensure a clean slate..."
-          # 关键修正 1: 同时删除 xcodeproj 和 xcworkspace
+          echo "### Deleting old project directory to ensure a clean slate..."
+          # 关键点 1: 这个删除是正确的，它移除了整个 .xcodeproj 包，包括内部被污染的 workspace。
           rm -rf "${APP_DIR}/MNNLLMiOS.xcodeproj"
-          rm -rf "${APP_DIR}/MNNLLMiOS.xcworkspace"
           
           echo "### Creating project.yml file..."
-          # project.yml 内容保持不变
           cat > "${APP_DIR}/project.yml" <<EOL
           name: MNNLLMiOS
           options:
@@ -57,7 +55,7 @@ jobs:
               settings:
                 base:
                   SWIFT_VERSION: "5.0"
-                  DEVELOPMENT_TEAM: "YOUR_TEAM_ID" # 如果不需要签名，这只是个占位符
+                  DEVELOPMENT_TEAM: "YOUR_TEAM_ID" # This will be ignored due to CODE_SIGNING_ALLOWED=NO
               dependencies:
                 - framework: MNN.framework
                 - package: SQLite.swift
@@ -75,24 +73,18 @@ jobs:
               from: 0.1.22
           EOL
           
-          echo "### Generating new Xcode project and workspace..."
+          echo "### Generating new Xcode project from yml..."
           cd "${APP_DIR}"
           xcodegen generate
-          
-          echo "### Generation finished. Final contents:"
-          ls -laR .
 
       - name: Build and Export unsigned IPA
         run: |
           cd apps/iOS/MNNLLMChat
 
-          echo "### Listing available schemes from the new workspace..."
-          xcodebuild -list -workspace MNNLLMiOS.xcworkspace
-
-          echo "### Archiving the newly generated workspace..."
-          # 关键修正 2: 使用 -workspace 而不是 -project
+          echo "### Archiving the newly generated project..."
+          # 关键点 2: 恢复使用 -project。因为项目是全新的，Xcode 15 可以正确处理其内部嵌套的 workspace 和 SPM 包。
           xcodebuild archive \
-            -workspace MNNLLMiOS.xcworkspace \
+            -project MNNLLMiOS.xcodeproj \
             -scheme MNNLLMiOS \
             -destination "generic/platform=iOS" \
             -archivePath build/MNNLLMChat.xcarchive \
@@ -100,11 +92,12 @@ jobs:
             CODE_SIGNING_ALLOWED=NO
 
           echo "### Creating ExportOptions.plist for unsigned IPA..."
-          # 关键修正 3: 添加导出 IPA 的步骤
+          # 关键点 3: 添加导出 IPA 所需的配置文件。
           EXPORT_PLIST_PATH="build/ExportOptions.plist"
-          echo "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
-          <!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">
-          <plist version=\"1.0\">
+          cat > "${EXPORT_PLIST_PATH}" <<EOL
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
           <dict>
               <key>method</key>
               <string>development</string>
@@ -112,9 +105,14 @@ jobs:
               <string>manual</string>
               <key>provisioningProfiles</key>
               <dict/>
+              <key>teamID</key>
+              <string>YOUR_TEAM_ID</string>
+              <key>signingCertificate</key>
+              <string></string>
           </dict>
-          </plist>" > "${EXPORT_PLIST_PATH}"
-
+          </plist>
+          EOL
+          
           echo "### Exporting the archive to an IPA..."
           xcodebuild -exportArchive \
             -archivePath build/MNNLLMChat.xcarchive \
@@ -125,7 +123,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: MNNLLMChat-iOS-unsigned-IPA
-          # 关键修正 4: 更新路径以匹配 exportArchive 的输出
           path: apps/iOS/MNNLLMChat/build/ipa/*.ipa
           if-no-files-found: error
-          retention-days: 7```
+          retention-days: 7
